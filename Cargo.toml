@@ -1,0 +1,16 @@
+[package]
+name = "gray-jira"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "jira issue-tracker tools for the gray agent harness"
+license = "MIT"
+[lib]
+name = "jira_plugin"
+path = "src/lib.rs"
+[[bin]]
+name = "jira"
+path = "src/main.rs"
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+ureq = { version = "2", features = ["json"] }

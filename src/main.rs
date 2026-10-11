@@ -241,6 +241,8 @@ fn cli(argv: &[String]) -> Result<String, String> {
             cfg_val("base_url","JIRA_BASE_URL").unwrap_or("MISSING".into()),
             if cfg_val("email","JIRA_EMAIL").is_some()
                 && cfg_val("api_token","JIRA_API_TOKEN").is_some() { "set" } else { "MISSING" })),
+        Some("-h" | "--help" | "help") => Ok(
+            "jira — issue tools. `jira setup --base URL --email E --token T`".into()),
         Some(o) => Err(format!("unknown verb {o}")),
     }
 }

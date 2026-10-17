@@ -227,6 +227,9 @@ fn tool(name: &str, args: &Value) -> Value {
 fn cli(argv: &[String]) -> Result<String, String> {
     match argv.first().map(String::as_str) {
         Some("setup") => {
+            if argv.len() == 1 {
+                return Err("nothing to save — pass --base <URL> --email <E> --token <T>".into());
+            }
             let mut cfg = read_config();
             let mut it = argv[1..].iter();
             while let Some(f) = it.next() {

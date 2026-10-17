@@ -78,10 +78,21 @@ fn api(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> 
         None => req.call(),
     };
     match resp {
-        Ok(r) => r.into_json().map_err(|e| e.to_string()),
-        Err(ureq::Error::Status(204, _)) => Ok(json!({})),
-        Err(ureq::Error::Status(c, r)) => Err(format!("HTTP {c}: {}",
-            r.into_string().unwrap_or_default().chars().take(300).collect::<String>())),
+        Ok(r) => {
+            if r.status() == 204 { return Ok(json!({})); }
+            let body = r.into_string().map_err(|e| e.to_string())?;
+            if body.trim().is_empty() { return Ok(json!({})); }
+            serde_json::from_str(&body).map_err(|e| e.to_string())
+        }
+        Err(ureq::Error::Status(c, r)) => {
+            let body = r.into_string().unwrap_or_default();
+            let msg = serde_json::from_str::<Value>(&body).ok().and_then(|v|
+                v["errorMessages"].as_array().and_then(|es| es.iter()
+                    .filter_map(|e| e.as_str()).collect::<Vec<_>>()
+                    .into_iter().next().map(str::to_string)))
+                .unwrap_or_else(|| body.chars().take(300).collect());
+            Err(format!("HTTP {c}: {}", msg.trim()))
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -187,7 +198,7 @@ fn transition(a: &Value) -> Result<String, String> {
                 || t["to"]["name"].as_str().map(|n| n.eq_ignore_ascii_case(want)).unwrap_or(false)
         }).ok_or_else(|| format!("no transition to {want:?}"))?;
     api("POST", &format!("/issue/{key}/transitions"),
-        Some(&json!({"transition": {"id": t["id"]}}))).ok();
+        Some(&json!({"transition": {"id": t["id"]}})))?;
     Ok(format!("{key} → {want}"))
 }
 

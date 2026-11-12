@@ -12,28 +12,28 @@ fn manifest() -> Value {
         "name": NAME, "display_name": "Jira",
         "version": env!("CARGO_PKG_VERSION"), "protocol": "1.1",
         "tools": [
-            {"name": "jira_search",
+            {"name": "jira_search", "label": "Jira search", "preview": "{jql}",
              "description": "JQL search; returns 'KEY | status | summary' lines.",
              "parameters": {"type": "object", "properties": {
                 "jql": {"type": "string"}, "limit": {"type": "integer"}},
              "required": ["jql"]}},
-            {"name": "jira_get",
+            {"name": "jira_get", "label": "Jira", "preview": "{key}",
              "description": "Issue detail by key (PROJ-123): status, assignee, description, recent comments.",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}}, "required": ["key"]}},
-            {"name": "jira_comment",
+            {"name": "jira_comment", "label": "Jira comment", "preview": "{key}\n{body|firstline}",
              "description": "Comment on an issue.",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}, "body": {"type": "string"}},
              "required": ["key","body"]}},
-            {"name": "jira_create",
+            {"name": "jira_create", "label": "Jira create", "preview": "{project} · {summary}",
              "description": "Create an issue in a project.",
              "parameters": {"type": "object", "properties": {
                 "project": {"type": "string"}, "summary": {"type": "string"},
                 "description": {"type": "string"},
                 "issue_type": {"type": "string", "description": "default Task"}},
              "required": ["project","summary"]}},
-            {"name": "jira_transition",
+            {"name": "jira_transition", "label": "Jira move", "preview": "{key} · {status}",
              "description": "Move an issue to a status by name (e.g. 'In Progress', 'Done').",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}, "status": {"type": "string"}},

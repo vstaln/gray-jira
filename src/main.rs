@@ -12,34 +12,35 @@ fn manifest() -> Value {
         "name": NAME, "display_name": "Jira",
         "version": env!("CARGO_PKG_VERSION"), "protocol": "1.1",
         "tools": [
-            {"name": "jira_search",
+            {"name": "jira_search", "label": "Jira search", "preview": "{jql}",
              "description": "JQL search; returns 'KEY | status | summary' lines.",
              "parameters": {"type": "object", "properties": {
                 "jql": {"type": "string"}, "limit": {"type": "integer"}},
              "required": ["jql"]}},
-            {"name": "jira_get",
+            {"name": "jira_get", "label": "Jira", "preview": "{key}",
              "description": "Issue detail by key (PROJ-123): status, assignee, description, recent comments.",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}}, "required": ["key"]}},
-            {"name": "jira_comment",
+            {"name": "jira_comment", "label": "Jira comment", "preview": "{key}\n{body|firstline}",
              "description": "Comment on an issue.",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}, "body": {"type": "string"}},
              "required": ["key","body"]}},
-            {"name": "jira_create",
+            {"name": "jira_create", "label": "Jira create", "preview": "{project} · {summary}",
              "description": "Create an issue in a project.",
              "parameters": {"type": "object", "properties": {
                 "project": {"type": "string"}, "summary": {"type": "string"},
                 "description": {"type": "string"},
                 "issue_type": {"type": "string", "description": "default Task"}},
              "required": ["project","summary"]}},
-            {"name": "jira_transition",
+            {"name": "jira_transition", "label": "Jira move", "preview": "{key} · {status}",
              "description": "Move an issue to a status by name (e.g. 'In Progress', 'Done').",
              "parameters": {"type": "object", "properties": {
                 "key": {"type": "string"}, "status": {"type": "string"}},
              "required": ["key","status"]}},
         ],
         "commands": ["/jira"], "subcommands": ["jira"],
+        "command_descriptions": {"/jira": "read and update Jira issues"},
     })
 }
 
@@ -86,10 +87,21 @@ fn api(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> 
         None => req.call(),
     };
     match resp {
-        Ok(r) => r.into_json().map_err(|e| e.to_string()),
-        Err(ureq::Error::Status(204, _)) => Ok(json!({})),
-        Err(ureq::Error::Status(c, r)) => Err(format!("HTTP {c}: {}",
-            r.into_string().unwrap_or_default().chars().take(300).collect::<String>())),
+        Ok(r) => {
+            if r.status() == 204 { return Ok(json!({})); }
+            let body = r.into_string().map_err(|e| e.to_string())?;
+            if body.trim().is_empty() { return Ok(json!({})); }
+            serde_json::from_str(&body).map_err(|e| e.to_string())
+        }
+        Err(ureq::Error::Status(c, r)) => {
+            let body = r.into_string().unwrap_or_default();
+            let msg = serde_json::from_str::<Value>(&body).ok().and_then(|v|
+                v["errorMessages"].as_array().and_then(|es| es.iter()
+                    .filter_map(|e| e.as_str()).collect::<Vec<_>>()
+                    .into_iter().next().map(str::to_string)))
+                .unwrap_or_else(|| body.chars().take(300).collect());
+            Err(format!("HTTP {c}: {}", msg.trim()))
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -195,7 +207,7 @@ fn transition(a: &Value) -> Result<String, String> {
                 || t["to"]["name"].as_str().map(|n| n.eq_ignore_ascii_case(want)).unwrap_or(false)
         }).ok_or_else(|| format!("no transition to {want:?}"))?;
     api("POST", &format!("/issue/{key}/transitions"),
-        Some(&json!({"transition": {"id": t["id"]}}))).ok();
+        Some(&json!({"transition": {"id": t["id"]}})))?;
     Ok(format!("{key} → {want}"))
 }
 
@@ -224,6 +236,9 @@ fn tool(name: &str, args: &Value) -> Value {
 fn cli(argv: &[String]) -> Result<String, String> {
     match argv.first().map(String::as_str) {
         Some("setup") => {
+            if argv.len() == 1 {
+                return Err("nothing to save — pass --base <URL> --email <E> --token <T>".into());
+            }
             let mut cfg = read_config();
             let mut it = argv[1..].iter();
             while let Some(f) = it.next() {

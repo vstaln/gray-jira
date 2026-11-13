@@ -40,6 +40,7 @@ fn manifest() -> Value {
              "required": ["key","status"]}},
         ],
         "commands": ["/jira"], "subcommands": ["jira"],
+        "command_descriptions": {"/jira": "read and update Jira issues"},
     })
 }
 

@@ -2,8 +2,8 @@
 //! ~/.gray/jira/config.json {"base_url","email","api_token"} or env
 //! JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN.
 
-use std::io::{BufRead, Write};
 use serde_json::{json, Value};
+use std::io::{BufRead, Write};
 
 const NAME: &str = "jira";
 
@@ -53,23 +53,29 @@ fn home_dir() -> Option<std::path::PathBuf> {
 }
 
 fn config_path() -> std::path::PathBuf {
-    let home = std::env::var_os("GRAY_HOME").map(std::path::PathBuf::from)
+    let home = std::env::var_os("GRAY_HOME")
+        .map(std::path::PathBuf::from)
         .or_else(|| home_dir().map(|h| h.join(".gray")))
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     home.join("jira").join("config.json")
 }
 fn read_config() -> Value {
-    std::fs::read_to_string(config_path()).ok()
-        .and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_else(|| json!({}))
+    std::fs::read_to_string(config_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| json!({}))
 }
 fn cfg_val(k: &str, env: &str) -> Option<String> {
-    std::env::var(env).ok().filter(|s| !s.is_empty())
+    std::env::var(env)
+        .ok()
+        .filter(|s| !s.is_empty())
         .or_else(|| read_config()[k].as_str().map(str::to_string))
 }
 
 fn api(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
-    let base = cfg_val("base_url", "JIRA_BASE_URL")
-        .ok_or("no JIRA base_url — `jira setup --base https://you.atlassian.net --email … --token …`")?;
+    let base = cfg_val("base_url", "JIRA_BASE_URL").ok_or(
+        "no JIRA base_url — `jira setup --base https://you.atlassian.net --email … --token …`",
+    )?;
     let email = cfg_val("email", "JIRA_EMAIL").ok_or("no Jira email configured")?;
     let token = cfg_val("api_token", "JIRA_API_TOKEN").ok_or("no Jira api_token configured")?;
     let url = format!("{}/rest/api/3{}", base.trim_end_matches('/'), path);
@@ -80,25 +86,39 @@ fn api(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> 
     }
     .timeout(std::time::Duration::from_secs(30))
     .set("Accept", "application/json");
-    req = req.set("Authorization",
-        &format!("Basic {}", b64(&format!("{email}:{token}"))));
+    req = req.set(
+        "Authorization",
+        &format!("Basic {}", b64(&format!("{email}:{token}"))),
+    );
     let resp = match body {
         Some(b) => req.set("Content-Type", "application/json").send_json(b),
         None => req.call(),
     };
     match resp {
         Ok(r) => {
-            if r.status() == 204 { return Ok(json!({})); }
+            if r.status() == 204 {
+                return Ok(json!({}));
+            }
             let body = r.into_string().map_err(|e| e.to_string())?;
-            if body.trim().is_empty() { return Ok(json!({})); }
+            if body.trim().is_empty() {
+                return Ok(json!({}));
+            }
             serde_json::from_str(&body).map_err(|e| e.to_string())
         }
         Err(ureq::Error::Status(c, r)) => {
             let body = r.into_string().unwrap_or_default();
-            let msg = serde_json::from_str::<Value>(&body).ok().and_then(|v|
-                v["errorMessages"].as_array().and_then(|es| es.iter()
-                    .filter_map(|e| e.as_str()).collect::<Vec<_>>()
-                    .into_iter().next().map(str::to_string)))
+            let msg = serde_json::from_str::<Value>(&body)
+                .ok()
+                .and_then(|v| {
+                    v["errorMessages"].as_array().and_then(|es| {
+                        es.iter()
+                            .filter_map(|e| e.as_str())
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .next()
+                            .map(str::to_string)
+                    })
+                })
                 .unwrap_or_else(|| body.chars().take(300).collect());
             Err(format!("HTTP {c}: {}", msg.trim()))
         }
@@ -119,8 +139,16 @@ fn b64(s: &str) -> String {
         };
         o2.push(T[((n >> 18) & 63) as usize] as char);
         o2.push(T[((n >> 12) & 63) as usize] as char);
-        o2.push(if c.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
-        o2.push(if c.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+        o2.push(if c.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        o2.push(if c.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     o2
 }
@@ -136,9 +164,17 @@ fn adf(text: &str) -> Value {
 /// ADF-ish → readable text (best effort).
 fn unadf(v: &Value) -> String {
     fn walk(n: &Value, out: &mut String) {
-        if let Some(t) = n["text"].as_str() { out.push_str(t); }
-        if n["type"].as_str() == Some("paragraph") && !out.is_empty() { out.push('\n'); }
-        if let Some(c) = n["content"].as_array() { for x in c { walk(x, out); } }
+        if let Some(t) = n["text"].as_str() {
+            out.push_str(t);
+        }
+        if n["type"].as_str() == Some("paragraph") && !out.is_empty() {
+            out.push('\n');
+        }
+        if let Some(c) = n["content"].as_array() {
+            for x in c {
+                walk(x, out);
+            }
+        }
     }
     let mut s = String::new();
     walk(v, &mut s);
@@ -148,27 +184,63 @@ fn unadf(v: &Value) -> String {
 fn search(a: &Value) -> Result<String, String> {
     let jql = a["jql"].as_str().ok_or("jql required")?;
     let n = a["limit"].as_u64().unwrap_or(20).min(100);
-    let d = api("GET", &format!("/search/jql?jql={}&maxResults={n}&fields=summary,status,assignee",
-        urlenc(jql)), None)?;
+    let d = api(
+        "GET",
+        &format!(
+            "/search/jql?jql={}&maxResults={n}&fields=summary,status,assignee",
+            urlenc(jql)
+        ),
+        None,
+    )?;
     let issues = d["issues"].as_array().cloned().unwrap_or_default();
-    if issues.is_empty() { return Ok("no issues".into()); }
-    Ok(issues.iter().map(|i| format!("{} | {} | {}",
-        i["key"].as_str().unwrap_or("?"),
-        i["fields"]["status"]["name"].as_str().unwrap_or("-"),
-        i["fields"]["summary"].as_str().unwrap_or(""))).collect::<Vec<_>>().join("\n"))
+    if issues.is_empty() {
+        return Ok("no issues".into());
+    }
+    Ok(issues
+        .iter()
+        .map(|i| {
+            format!(
+                "{} | {} | {}",
+                i["key"].as_str().unwrap_or("?"),
+                i["fields"]["status"]["name"].as_str().unwrap_or("-"),
+                i["fields"]["summary"].as_str().unwrap_or("")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
 }
 
 fn get(a: &Value) -> Result<String, String> {
     let key = a["key"].as_str().ok_or("key required")?;
-    let d = api("GET", &format!("/issue/{key}?fields=summary,status,assignee,description,comment"), None)?;
+    let d = api(
+        "GET",
+        &format!("/issue/{key}?fields=summary,status,assignee,description,comment"),
+        None,
+    )?;
     let f = &d["fields"];
-    let mut out = format!("{} | {} | {}\n{}\n",
-        key, f["status"]["name"].as_str().unwrap_or(""), f["summary"].as_str().unwrap_or(""),
-        unadf(&f["description"]));
-    for c in f["comment"]["comments"].as_array().cloned().unwrap_or_default()
-        .iter().rev().take(5).collect::<Vec<_>>().iter().rev() {
-        out.push_str(&format!("\n— {}: {}",
-            c["author"]["displayName"].as_str().unwrap_or("?"), unadf(&c["body"])));
+    let mut out = format!(
+        "{} | {} | {}\n{}\n",
+        key,
+        f["status"]["name"].as_str().unwrap_or(""),
+        f["summary"].as_str().unwrap_or(""),
+        unadf(&f["description"])
+    );
+    for c in f["comment"]["comments"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .take(5)
+        .collect::<Vec<_>>()
+        .iter()
+        .rev()
+    {
+        out.push_str(&format!(
+            "\n— {}: {}",
+            c["author"]["displayName"].as_str().unwrap_or("?"),
+            unadf(&c["body"])
+        ));
     }
     Ok(out)
 }
@@ -176,8 +248,11 @@ fn get(a: &Value) -> Result<String, String> {
 fn comment(a: &Value) -> Result<String, String> {
     let key = a["key"].as_str().ok_or("key required")?;
     let body = a["body"].as_str().ok_or("body required")?;
-    api("POST", &format!("/issue/{key}/comment"),
-        Some(&json!({"body": adf(body)})))?;
+    api(
+        "POST",
+        &format!("/issue/{key}/comment"),
+        Some(&json!({"body": adf(body)})),
+    )?;
     Ok(format!("commented on {key}"))
 }
 
@@ -189,33 +264,59 @@ fn create(a: &Value) -> Result<String, String> {
         "summary": summary,
         "issuetype": {"name": a["issue_type"].as_str().unwrap_or("Task")},
     });
-    if let Some(d) = a["description"].as_str() { fields["description"] = adf(d); }
+    if let Some(d) = a["description"].as_str() {
+        fields["description"] = adf(d);
+    }
     let r = api("POST", "/issue", Some(&json!({"fields": fields})))?;
-    Ok(format!("{} {}", r["key"].as_str().unwrap_or("?"),
-        cfg_val("base_url", "JIRA_BASE_URL").unwrap_or_default()
-            .trim_end_matches('/').to_string()
-            + "/browse/" + r["key"].as_str().unwrap_or("")))
+    Ok(format!(
+        "{} {}",
+        r["key"].as_str().unwrap_or("?"),
+        cfg_val("base_url", "JIRA_BASE_URL")
+            .unwrap_or_default()
+            .trim_end_matches('/')
+            .to_string()
+            + "/browse/"
+            + r["key"].as_str().unwrap_or("")
+    ))
 }
 
 fn transition(a: &Value) -> Result<String, String> {
     let key = a["key"].as_str().ok_or("key required")?;
     let want = a["status"].as_str().ok_or("status required")?;
     let d = api("GET", &format!("/issue/{key}/transitions"), None)?;
-    let t = d["transitions"].as_array().cloned().unwrap_or_default()
-        .into_iter().find(|t| {
-            t["name"].as_str().map(|n| n.eq_ignore_ascii_case(want)).unwrap_or(false)
-                || t["to"]["name"].as_str().map(|n| n.eq_ignore_ascii_case(want)).unwrap_or(false)
-        }).ok_or_else(|| format!("no transition to {want:?}"))?;
-    api("POST", &format!("/issue/{key}/transitions"),
-        Some(&json!({"transition": {"id": t["id"]}})))?;
+    let t = d["transitions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|t| {
+            t["name"]
+                .as_str()
+                .map(|n| n.eq_ignore_ascii_case(want))
+                .unwrap_or(false)
+                || t["to"]["name"]
+                    .as_str()
+                    .map(|n| n.eq_ignore_ascii_case(want))
+                    .unwrap_or(false)
+        })
+        .ok_or_else(|| format!("no transition to {want:?}"))?;
+    api(
+        "POST",
+        &format!("/issue/{key}/transitions"),
+        Some(&json!({"transition": {"id": t["id"]}})),
+    )?;
     Ok(format!("{key} → {want}"))
 }
 
 fn urlenc(s: &str) -> String {
-    s.bytes().map(|b| match b {
-        b'A'..=b'Z'|b'a'..=b'z'|b'0'..=b'9'|b'-'|b'_'|b'.'|b'~' => (b as char).to_string(),
-        _ => format!("%{b:02X}"),
-    }).collect()
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 fn tool(name: &str, args: &Value) -> Value {
@@ -245,27 +346,37 @@ fn cli(argv: &[String]) -> Result<String, String> {
                 match f.as_str() {
                     "--base" => cfg["base_url"] = json!(it.next().ok_or("--base needs URL")?),
                     "--email" => cfg["email"] = json!(it.next().ok_or("--email needs value")?),
-                    "--token" => cfg["api_token"] = json!(it.next().ok_or("--token needs value")?),
+                    "--token" => {
+                        cfg["api_token"] = json!(it.next().ok_or("--token needs value")?)
+                    }
                     o => return Err(format!("unknown flag {o}")),
                 }
             }
             std::fs::create_dir_all(config_path().parent().unwrap()).map_err(|e| e.to_string())?;
             std::fs::write(config_path(), serde_json::to_string_pretty(&cfg).unwrap())
                 .map_err(|e| e.to_string())?;
-            #[cfg(unix)] {
+            #[cfg(unix)]
+            {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(config_path(),
-                    std::fs::Permissions::from_mode(0o600));
+                let _ =
+                    std::fs::set_permissions(config_path(), std::fs::Permissions::from_mode(0o600));
             }
             Ok("saved".into())
         }
         Some("status") | None => Ok(format!(
             "Jira\n  base: {}\n  auth: {}",
-            cfg_val("base_url","JIRA_BASE_URL").unwrap_or("MISSING".into()),
-            if cfg_val("email","JIRA_EMAIL").is_some()
-                && cfg_val("api_token","JIRA_API_TOKEN").is_some() { "set" } else { "MISSING" })),
-        Some("-h" | "--help" | "help") => Ok(
-            "jira — issue tools. `jira setup --base URL --email E --token T`".into()),
+            cfg_val("base_url", "JIRA_BASE_URL").unwrap_or("MISSING".into()),
+            if cfg_val("email", "JIRA_EMAIL").is_some()
+                && cfg_val("api_token", "JIRA_API_TOKEN").is_some()
+            {
+                "set"
+            } else {
+                "MISSING"
+            }
+        )),
+        Some("-h" | "--help" | "help") => {
+            Ok("jira — issue tools. `jira setup --base URL --email E --token T`".into())
+        }
         Some(o) => Err(format!("unknown verb {o}")),
     }
 }
@@ -275,7 +386,9 @@ fn sidecar() -> std::io::Result<()> {
     let mut out = std::io::stdout().lock();
     for line in stdin.lock().lines() {
         let line = line?;
-        let Ok(v) = serde_json::from_str::<Value>(&line) else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
         let method = v["method"].as_str().unwrap_or("");
         match v.get("id").cloned() {
             None if method == "plugin/shutdown" => return Ok(()),
@@ -284,11 +397,21 @@ fn sidecar() -> std::io::Result<()> {
                 let reply = if method == "plugin/manifest" {
                     json!({"id": id, "result": manifest()})
                 } else if method == "tool/call" {
-                    let mut r = tool(v["params"]["name"].as_str().unwrap_or(""), &v["params"]["args"]);
-                    r["id"] = id; r
+                    let mut r = tool(
+                        v["params"]["name"].as_str().unwrap_or(""),
+                        &v["params"]["args"],
+                    );
+                    r["id"] = id;
+                    r
                 } else if method == "command/run" {
-                    let argv: Vec<String> = v["params"]["argv"].as_array()
-                        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    let argv: Vec<String> = v["params"]["argv"]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
                         .unwrap_or_default();
                     let text = cli(&argv).unwrap_or_else(|e| e);
                     json!({"id": id, "result": {"text": text}})
@@ -296,7 +419,8 @@ fn sidecar() -> std::io::Result<()> {
                     json!({"id": id, "error": {"code": -32601,
                         "message": format!("method not found: {method}")}})
                 };
-                writeln!(out, "{reply}")?; out.flush()?;
+                writeln!(out, "{reply}")?;
+                out.flush()?;
             }
         }
     }
@@ -306,21 +430,29 @@ fn sidecar() -> std::io::Result<()> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<String> = match args.first().map(String::as_str) {
-        Some("jira") => args[1..].to_vec(), _ => args };
+        Some("jira") => args[1..].to_vec(),
+        _ => args,
+    };
     match args.first().map(String::as_str) {
         Some("manifest") => println!("{}", manifest()),
-        Some("sidecar") => { let _ = sidecar(); }
+        Some("sidecar") => {
+            let _ = sidecar();
+        }
         _ => {
             if args.is_empty() {
                 if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
                     println!("jira — issue tools. `jira setup --base URL --email E --token T`");
                     return;
                 }
-                let _ = sidecar(); return;
+                let _ = sidecar();
+                return;
             }
             match cli(&args) {
                 Ok(t) => println!("{t}"),
-                Err(e) => { eprintln!("{e}"); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
             }
         }
     }
